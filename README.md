@@ -1,6 +1,3 @@
-# Hi there, I'm [Mrugank][linkedin] 👋 
-
-[![YouTube Channel Subscribers](https://img.shields.io/youtube/channel/subscribers/UC_o2rxaj5w_CAl5y_V1nqNg?logo=youtube&logoColor=red&style=for-the-badge)][youtube] [![My Website](https://img.shields.io/website?style=for-the-badge&url=https%3A%2F%2Fmrayonline.web.app%2F)][website] [![LinkedIn](https://img.shields.io/website?color=blue&label=linkedin&logo=linkedin&logoColor=blue&style=for-the-badge&up_color=green&up_message=mrugank%20ray&url=https%3A%2F%2Fmrayonline.web.app%2F)][linkedin] [![Buy me coffee](https://img.shields.io/website?label=Buy%20Me%20coffee&style=for-the-badge&up_color=orange&up_message=mrugank%20ray&url=https%3A%2F%2Fwww.buymeacoffee.com%2Fmrugankray)][buy_me_coffee]
 
 ## Table of Contents
 1. [Overview](#overview)
@@ -31,6 +28,7 @@
 26. [Build Custom Docker Images](#build-custom-docker-images)
 27. [Manage resources](#manage-resources)
 28. [Dependencies](#dependencies)
+- [Monitor with Prometheus and Grafana](#monitor-with-prometheus-and-grafana)
 
 ## Overview
 Today, there are many projects available that were created to deploy a Spark or Hadoop cluster, but they are either ineffective or resource-intensive, causing the system to freeze. 
@@ -160,6 +158,39 @@ This is a list of technologies or frameworks are exposed to the Host. You can ac
 | Schema Registry | http://localhost:8083 |
 | Kadmin UI | http://localhost:8084/kadmin/ |
 | Kafka Control Center | http://localhost:9021 |
+
+## Monitor with Prometheus and Grafana
+The monitoring stack is defined in `spark-hadoop-monitoring-docker-compose.yaml`. Start it from the project directory with:
+```sh
+sudo docker-compose -f spark-hadoop-monitoring-docker-compose.yaml up -d
+```
+
+Open Prometheus at [http://localhost:9090](http://localhost:9090) and Grafana at [http://localhost:3030](http://localhost:3030). On a fresh Grafana installation, sign in with `admin` / `admin` and follow the prompt to set a new password.
+
+### Configure Grafana
+1. In Grafana, open **Connections > Data sources > Add data source** and select **Prometheus**.
+2. Set the Prometheus server URL to `http://prometheus:9090`. Grafana uses the Compose service name to reach Prometheus; `localhost:9090` inside the Grafana container would refer to Grafana itself.
+3. Select **Save & test**. Create a dashboard, add a panel, and select a Prometheus metric in the query editor. The query `up` shows whether each configured scrape target is reachable.
+
+In Prometheus, open **Status > Targets** (or `/targets`) to check scrape health. The current configuration in `prometheus/prometheus.yml` scrapes cAdvisor at `cadvisor:8080` and Spark master, worker, and driver endpoints on `namenode` ports 8080, 8081, and 4040. The driver endpoint is available only while a Spark driver is running.
+
+### Exporter coverage
+Prometheus exporters expose metrics in a format Prometheus can scrape. In this stack:
+- **cAdvisor** (`cadvisor:8080`) exposes Docker container resource metrics and is already scraped by the `docker-containers` job. The equivalent scrape configuration is:
+
+```yaml
+  - job_name: "docker-containers"
+    static_configs:
+      - targets:
+          - "cadvisor:8080"
+```
+
+  After confirming `docker-containers` is **UP** at `/targets`, try `container_memory_usage_bytes` or `rate(container_cpu_usage_seconds_total[5m])` in Prometheus or a Grafana panel to inspect container memory or CPU usage.
+- **Spark's Prometheus servlet** exposes master, worker, and driver metrics and those three endpoints are already configured as scrape targets. Spark application metrics have a servlet path in `configs/spark-metrics.properties`, but no corresponding scrape job is currently defined.
+
+The Compose file also starts Node Exporter, but it is not currently listed in `prometheus/prometheus.yml`, so host operating-system metrics are not collected. Hadoop/YARN-specific metrics are not currently scraped either; a suitable exporter and a Prometheus scrape job would need to be added for those.
+
+Prometheus configuration and time-series data are mounted from `prometheus/prometheus.yml` and `prometheus/data`; Grafana state is stored in `grafana/data`. Keep these directories when you want to retain configuration and data across container restarts.
 
 ## Containers running in the cluster
 Below are containers running in the cluster.
